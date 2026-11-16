@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import random
+import os
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
@@ -16,6 +18,20 @@ dp = Dispatcher()
 user_states = {}
 user_quiz = {}
 registered_users = {}
+
+# --- RENDER UCHUN WEBSERVER QISMI ---
+async def handle(request):
+    return web.Response(text="Bot ishlayapti!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+# ------------------------------------
 
 QUIZ_QUESTIONS = [
     {
@@ -330,7 +346,3 @@ async def next_question_callback(callback: types.CallbackQuery):
 async def main():
     logging.basicConfig(level=logging.INFO)
     print("Bot mukammal holatda ishga tushdi...")
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main()) 
