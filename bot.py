@@ -220,4 +220,138 @@ async def handle_messages(message: types.Message):
             issues.append("⚠️ Kichik harf (a-z) qo'shing.")
         if not any(c.isdigit() for c in pwd):
             issues.append("⚠️ Raqam (0-9) qo'shing.")
-        if not
+        if not any(c in "!@#$%^&*()_+-=" for c in pwd):
+            issues.append("⚠️ Maxsus belgi (!, @, #, $) qo'shing.")
+
+        if issues:
+            feedback = "📊 **Parol tahlili (Zaif):**\n\n" + "\n".join(issues)
+        else:
+            feedback = "✅ **Ajoyib! Bu juda kuchli va ishonchli parol!**"
+        
+        await message.answer(feedback, reply_markup=get_main_keyboard(), parse_mode="Markdown")
+
+    elif user_states.get(user_id) == "checking_url":
+        url = text.lower()
+        if not ("http://" in url or "https://" in url or "www." in url or "t.me/" in url or "." in url):
+            await message.answer(
+                "❌ **Bu havola emas!** Iltimos, haqiqiy internet havolasini yuboring.",
+                reply_markup=get_main_keyboard(),
+                parse_mode="Markdown"
+            )
+            return
+
+        suspicious_keywords = ["free", "win", "bonus", "gift", "login-", "verify", "update", "telegram-", "priz", "pul", "xavfsizlik"]
+        if any(word in url for word in suspicious_keywords) or "http://" in url:
+            result = "⚠️ **OGOHLANTIRISH!** Bu havola shubhali yoki xavfli bo'lishi mumkin!"
+        else:
+            result = "✅ **Havola xavfsizga o'xshaydi.** Lekin har doim hushyor bo'ling!"
+            
+        await message.answer(result, reply_markup=get_main_keyboard(), parse_mode="Markdown")
+
+    else:
+        await message.answer("Iltimos, pastdagi tugmalardan birini tanlang 👇", reply_markup=get_main_keyboard())
+
+async def send_inline_quiz_question(message_or_call, user_id: int):
+    q_data = user_quiz[user_id]
+    index = q_data["index"]
+    q = QUIZ_QUESTIONS[index]
+    
+    builder = InlineKeyboardBuilder()
+    for key, text in q["options"].items():
+        builder.button(text=f"{key}) {text}", callback_data=f"quiz_{key}")
+    builder.adjust(1)
+    
+    text = (
+        f"❓ **Kiberxavfsizlik Viktorinasi ({index + 1}/10):**\n\n"
+        f"*{q['question']}*"
+    )
+    
+    if isinstance(message_or_call, types.CallbackQuery):
+        await message_or_call.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    else:
+        await message_or_call.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+
+@dp.callback_query(lambda c: c.data.startswith("quiz_"))
+async def process_quiz_callback(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    if user_id not in user_quiz:
+        await callback.answer("Viktorina yakunlangan.", show_alert=True)
+        return
+
+    selected_option = callback.data.split("_")[1]
+    q_data = user_quiz[user_id]
+    index = q_data["index"]
+    q = QUIZ_QUESTIONS[index]
+    correct_ans = q["answer"]
+    explanation = q["explanation"]
+
+    if selected_option == correct_ans:
+        q_data["score"] += 1
+        res_text = f"✅ **To'g'ri!**\n\n💡 *Izoh:* {explanation}"
+    else:
+        res_text = f"❌ **Xato!** To'g'ri javob **{correct_ans}** edi.\n\n💡 *Izoh:* {explanation}"
+
+    q_data["index"] += 1
+
+    if q_data["index"] >= len(QUIZ_QUESTIONS):
+        score = q_data["score"]
+        total = len(QUIZ_QUESTIONS)
+        
+        if score >= 9:
+            status = "🏆 **Kiber-mutaxassis!** Ajoyib natija!"
+        elif score >= 6:
+            status = "👍 **Yaxshi!** Asosiy xavfsizlik qoidalarini bilasiz."
+        else:
+            status = "📚 **Hali o'qish kerak!** Maslahatlar bo'limini ko'zdan kechiring."
+
+        await callback.message.edit_text(
+            f"🎉 **Viktorina yakunlandi!**\n\nSizning natijangiz: **{score} / {total}**\n\n{status}",
+            parse_mode="Markdown"
+        )
+        await callback.message.answer("Asosiy menyuga qaytish:", reply_markup=get_main_keyboard())
+        user_states.pop(user_id, None)
+        user_quiz.pop(user_id, None)
+    else:
+        builder = InlineKeyboardBuilder()
+        builder.button(text="➡️ Keyingi savol", callback_data="next_question")
+        
+        await callback.message.edit_text(
+            f"{res_text}\n\nDavom etishga tayyormisiz?",
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "next_question")
+async def next_question_callback(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    if user_id in user_quiz:
+        await send_inline_quiz_question(callback, user_id)
+    await callback.answer()
+
+# --- RENDER UCHUN PARALLEL SERVER VA BOT ---
+async def handle(request):
+    return web.Response(text="Bot ishlayapti!")
+
+async def web_server():
+    app = web.Application()
+    app.router.add_get('/', handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Veb-server {port}-portda ishga tushdi.")
+
+async def main():
+    logging.basicConfig(level=logging.INFO)
+    print("Bot va veb-server ishga tushmoqda...")
+    
+    # Veb-server va botni bir vaqtning o'zida parallel ishga yuboramiz
+    await asyncio.gather(
+        web_server(),
+        dp.start_polling(bot)
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
