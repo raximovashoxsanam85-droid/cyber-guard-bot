@@ -22,15 +22,6 @@ registered_users = {}
 # --- RENDER UCHUN WEBSERVER QISMI ---
 async def handle(request):
     return web.Response(text="Bot ishlayapti!")
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get('/', handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
 # ------------------------------------
 
 QUIZ_QUESTIONS = [
@@ -345,4 +336,22 @@ async def next_question_callback(callback: types.CallbackQuery):
 
 async def main():
     logging.basicConfig(level=logging.INFO)
-    print("Bot mukammal holatda ishga tushdi...")
+    print("Bot ishga tushmoqda...")
+    try:
+        # Veb-serverni Render uchun ishga tushiramiz
+        app = web.Application()
+        app.router.add_get('/', handle)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        port = int(os.environ.get("PORT", 10000))
+        site = web.TCPSite(runner, '0.0.0.0', port)
+        await site.start()
+        print(f"Veb-server {port}-portda muvaffaqiyatli ochildi.")
+
+        print("Bot polling boshlanmoqda...")
+        await dp.start_polling(bot)
+    except Exception as e:
+        print(f"XATOLIK YUZ BERDI: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
